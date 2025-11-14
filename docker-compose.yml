@@ -1,0 +1,84 @@
+version: "3.9"
+
+services:
+  sonardb:
+    image: postgres:15
+    container_name: sonardb
+    environment:
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar
+      - POSTGRES_DB=sonar
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - secnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  sonarqube:
+    image: sonarqube:community
+    container_name: sonarqube
+    depends_on:
+      sonardb:
+        condition: service_healthy
+    environment:
+      - SONAR_JDBC_URL=jdbc:postgresql://sonardb:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+    networks:
+      - secnet
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  gitea:
+    image: gitea/gitea:latest
+    container_name: gitea
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__server__ROOT_URL=http://localhost:3000/
+      - GITEA__webhook__ALLOWED_HOST_LIST=*
+    volumes:
+      - gitea_data:/data
+    ports:
+      - "3000:3000"
+      - "222:22"
+    networks:
+      - secnet
+
+  jenkins:
+    build: ./jenkins
+    container_name: jenkins
+    user: root
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - secnet
+    depends_on:
+      - sonarqube
+      - gitea
+
+networks:
+  secnet:
+    driver: bridge
+
+volumes:
+  db_data:
+  sonarqube_data:
+  sonarqube_logs:
+  gitea_data:
+  jenkins_home:
